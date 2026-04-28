@@ -2,6 +2,16 @@
 
 An interactive R Shiny app for differential gene expression analysis (DESeq2) 
 and KEGG pathway visualisation (pathview).
+## 🚀 Quick Start
+
+Clone the repository and install required packages:
+
+```r
+# Install dependencies
+source("install.R")
+
+# Run the app
+shiny::runApp()
 
 ## Installation
 ```r
@@ -35,5 +45,10 @@ BiocManager::install(setdiff(bioc_packages, rownames(installed.packages())))
 ```r
 shiny::runApp("app.R")
 ```
+## ▶️ Run directly from GitHub
+
+```r
+install.packages("shiny")
+shiny::runGitHub("DGE2Pathview", "simranven996")
 
 See `docs/DGE2Pathview_UserManual.pdf` for full documentation.
