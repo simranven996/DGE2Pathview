@@ -43,7 +43,7 @@ BiocManager::install(setdiff(bioc_packages, rownames(installed.packages())))
 
 ## Usage
 ```r
-shiny::runApp("app.R")
+shiny::runApp("app_17.R")
 ```
 ## ▶️ Run directly from GitHub
 
