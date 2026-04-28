@@ -5,12 +5,30 @@ and KEGG pathway visualisation (pathview).
 
 ## Installation
 ```r
-install.packages(c('shiny','shinydashboard','shinyWidgets',
-                   'shinyjs','DT','ggplot2','plotly','base64enc','zip'))
+# ---- Install CRAN packages ----
+cran_packages <- c(
+  "shiny", "shinydashboard", "shinyWidgets", "shinyjs",
+  "DT", "ggplot2", "plotly", "base64enc", "zip",
+  "dplyr", "stringr", "tidyr", "readr"
+)
 
-BiocManager::install(c('DESeq2','pathview','KEGGREST','AnnotationDbi',
-  'org.Hs.eg.db','org.Mm.eg.db','org.Rn.eg.db','org.Dr.eg.db',
-  'org.Dm.eg.db','org.Ce.eg.db','org.Sc.sgd.db'))
+install.packages(setdiff(cran_packages, rownames(installed.packages())))
+
+# ---- Install Bioconductor manager ----
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+# ---- Install Bioconductor packages ----
+bioc_packages <- c(
+  "DESeq2", "pathview", "KEGGREST", "AnnotationDbi",
+  "limma", "SummarizedExperiment",
+  "org.Hs.eg.db", "org.Mm.eg.db", "org.Rn.eg.db",
+  "org.Dr.eg.db", "org.Dm.eg.db", "org.Ce.eg.db",
+  "org.Sc.sgd.db",
+  "impute", "vsn"
+)
+
+BiocManager::install(setdiff(bioc_packages, rownames(installed.packages())))
 ```
 
 ## Usage
