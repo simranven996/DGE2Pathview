@@ -20,7 +20,16 @@
 #   - Pathway zoom: scroll-to-zoom + drag-to-pan (from v15, retained)
 #   - Help tab: formatted HTML tables for all input formats (from v15, retained)
 # =============================================================================
+required_pkgs <- c(
+  "shiny","limma","pathview","AnnotationDbi","org.Hs.eg.db"
+)
 
+missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly=TRUE)]
+
+if (length(missing) > 0) {
+  stop(paste("Missing packages:", paste(missing, collapse=", "),
+             "\nRun the install script before launching the app."))
+}
 options(shiny.maxRequestSize = 25 * 1024^2)
 
 library(shiny)
