@@ -20,17 +20,8 @@
 #   - Pathway zoom: scroll-to-zoom + drag-to-pan (from v15, retained)
 #   - Help tab: formatted HTML tables for all input formats (from v15, retained)
 # =============================================================================
-required_pkgs <- c(
-  "shiny","limma","pathview","AnnotationDbi","org.Hs.eg.db"
-)
 
-missing <- required_pkgs[!sapply(required_pkgs, requireNamespace, quietly=TRUE)]
-
-if (length(missing) > 0) {
-  stop(paste("Missing packages:", paste(missing, collapse=", "),
-             "\nRun the install script before launching the app."))
-}
-options(shiny.maxRequestSize = 25 * 1024^2)
+options(shiny.maxRequestSize = 1000 * 1024^2)
 
 library(shiny)
 library(shinydashboard)
@@ -2697,145 +2688,77 @@ server <- function(input, output, session) {
                       choices = c("None", cols),
                       selected = "None")
   })
-  output$dep_pathview_msg <- renderUI(NULL)
   observeEvent(input$dep_to_pathview, {
     req(dep$all_results)
     
     sel <- input$dep_send_contrast
+    
     df_pv <- if (!is.null(sel) && sel %in% names(dep$all_results)) {
       dep$all_results[[sel]]
     } else {
       dep$all_results[[1]]
     }
     
-    df_clean <- df_pv[!is.na(df_pv$log2FoldChange), , drop = FALSE]
+    df_pv <- df_pv[!is.na(df_pv$log2FoldChange), , drop = FALSE]
     
-    ids_raw <- if ("protein_name" %in% colnames(df_clean)) {
-      as.character(df_clean$protein_name)
-    } else if ("protein_id" %in% colnames(df_clean)) {
-      as.character(df_clean$protein_id)
+    # Prefer gene symbols/protein names for PathView conversion
+    ids_for_conversion <- if ("protein_name" %in% colnames(df_pv) &&
+                              any(!is.na(df_pv$protein_name) & nzchar(df_pv$protein_name))) {
+      as.character(df_pv$protein_name)
+    } else if ("protein_id" %in% colnames(df_pv)) {
+      as.character(df_pv$protein_id)
     } else {
-      as.character(df_clean$protein)
+      as.character(df_pv$protein)
     }
     
-    # Clean common UniProt formats:
-    # sp|P12345|GENE_HUMAN -> P12345
-    ids_clean <- sub("^.*\\|([^|]+)\\|.*$", "\\1", ids_raw)
-    ids_clean <- trimws(ids_clean)
-    
-    convert_try <- function(ids, from_type) {
-      tryCatch({
-        suppressWarnings(
-          AnnotationDbi::mapIds(
-            org.Hs.eg.db::org.Hs.eg.db,
-            keys = unique(ids),
-            column = "ENTREZID",
-            keytype = from_type,
-            multiVals = "first"
-          )
-        )
-      }, error = function(e) NULL)
-    }
-    
-    mapped <- convert_try(ids_clean, "SYMBOL")
-    from_used <- "SYMBOL"
-    
-    if (is.null(mapped) || sum(!is.na(mapped)) == 0) {
-      mapped <- convert_try(ids_clean, "UNIPROT")
-      from_used <- "UNIPROT"
-    }
-    
-    if (is.null(mapped) || sum(!is.na(mapped)) == 0) {
-      showNotification(
-        "DEP IDs could not be converted to ENTREZID. Check whether the protein column contains UniProt IDs, gene symbols, or another ID type.",
-        type = "error",
-        duration = 15
-      )
-      return()
-    }
-    
-    entrez <- unname(mapped[ids_clean])
+    # Clean common messy protein/gene-name formats
+    ids_for_conversion <- trimws(ids_for_conversion)
+    ids_for_conversion <- sub("^.*\\|([^|]+)\\|.*$", "\\1", ids_for_conversion)
     
     df_out <- data.frame(
-      original_id = ids_raw,
-      converted_id = as.character(entrez),
-      log2FoldChange = df_clean$log2FoldChange,
+      gene_id = ids_for_conversion,
+      log2FoldChange = as.numeric(df_pv$log2FoldChange),
       stringsAsFactors = FALSE
     )
     
-    df_out <- df_out[!is.na(df_out$converted_id) & df_out$converted_id != "NA", ]
+    df_out <- df_out[
+      !is.na(df_out$gene_id) &
+        nzchar(df_out$gene_id) &
+        !is.na(df_out$log2FoldChange),
+      ,
+      drop = FALSE
+    ]
     
-    if (nrow(df_out) == 0) {
-      showNotification(
-        paste0("No DEP IDs mapped using ", from_used, ". PathView needs ENTREZ IDs."),
-        type = "error",
-        duration = 15
-      )
-      return()
-    }
-    
-    # Keep PathView pipeline-compatible object
-    rv$converted_data <- df_out
-    rv$conversion_done <- TRUE
-    rv$converted_id_type <- "ENTREZID"
-    
-    rv$expr_data <- data.frame(
-      gene_id = df_out$converted_id,
-      log2FoldChange = df_out$log2FoldChange,
-      stringsAsFactors = FALSE
-    )
-    
+    rv$expr_data <- df_out
     rv$gene_col <- "gene_id"
     rv$fc_col <- "log2FoldChange"
+    
+    rv$conversion_done <- FALSE
+    rv$converted_data <- NULL
+    rv$converted_id_type <- NULL
+    
+    updateSelectInput(session, "organism", selected = "hsa")
+    updateSelectInput(session, "id_from", selected = "SYMBOL")
+    updateSelectInput(session, "id_to", selected = "ENTREZID")
     
     output$dep_pathview_msg <- renderUI(tags$div(
       class = "alert alert-success",
       icon("check"),
       paste0(
-        " Sent ", nrow(df_out), " mapped DEP proteins to PathView using ",
-        from_used, " → ENTREZID."
+        " Sent ", nrow(df_out),
+        " DEP rows to Gene ID Converter. Use SYMBOL → ENTREZID, then PathView."
       )
     ))
     
     showNotification(
-      paste0("DEP results sent to PathView: ", nrow(df_out), " mapped IDs using ", from_used, "."),
-      type = "message"
+      "DEP results sent to Gene ID Converter. Run conversion before PathView.",
+      type = "message",
+      duration = 8
     )
     
-    updateTabItems(session, "tabs", "pathview_tab")
-    
-    library(clusterProfiler)
-    library(org.Hs.eg.db)
-    
-    df_clean <- df_pv[!is.na(df_pv$log2FoldChange), ]
-    
-    # Try converting UNIPROT → ENTREZ (most common for proteomics)
-    conv <- tryCatch({
-      bitr(df_clean$protein,
-           fromType = "UNIPROT",
-           toType = "ENTREZID",
-           OrgDb = org.Hs.eg.db)
-    }, error = function(e) NULL)
-    
-    # fallback: SYMBOL if UNIPROT fails
-    if (is.null(conv) || nrow(conv) == 0) {
-      conv <- bitr(df_clean$protein,
-                   fromType = "SYMBOL",
-                   toType = "ENTREZID",
-                   OrgDb = org.Hs.eg.db)
-    }
-    
-    df_out <- merge(conv, df_clean, by.x = names(conv)[1], by.y = "protein")
-    
-    df_out <- df_out[, c("ENTREZID", "log2FoldChange")]
-    colnames(df_out) <- c("gene_id", "log2FoldChange")
-    rv$expr_data <- df_out; rv$gene_col <- "gene_id"; rv$fc_col <- "log2FoldChange"
-    rv$conversion_done <- FALSE; rv$converted_data <- NULL
-    output$dep_pathview_msg <- renderUI(tags$div(class="alert alert-success",
-      icon("check"), " Sent! Go to Gene ID Converter then PathView Plots."))
-    showNotification("DEP results sent to PathView pipeline.", type="message")
     updateTabItems(session, "tabs", "convert_tab")
   })
+    
 
   output$dep_preview_table <- renderDT({
     req(dep$all_results)
